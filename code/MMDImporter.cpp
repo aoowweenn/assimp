@@ -53,6 +53,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <cmath>
+#include <utility>
 
 static const aiImporterDesc desc = {"MMD Importer",
                                     "",
@@ -63,11 +65,13 @@ static const aiImporterDesc desc = {"MMD Importer",
                                     0,
                                     0,
                                     0,
-                                    "pmx"};
+                                    "pmx vmd"};
 
 namespace Assimp {
 
 using namespace std;
+
+const char *MMDImporter::pTokens[] = {"PMX ", "Vocaloid Motion Data"};
 
 // ------------------------------------------------------------------------------------------------
 //  Default constructor
@@ -92,12 +96,11 @@ bool MMDImporter::CanRead(const std::string &pFile, IOSystem *pIOHandler,
                           bool checkSig) const {
   if (!checkSig) // Check File Extension
   {
-    return SimpleExtensionCheck(pFile, "pmx");
+    return SimpleExtensionCheck(pFile, "pmx")
+           | SimpleExtensionCheck(pFile, "vmd");
   } else // Check file Header
   {
-    static const char *pTokens[] = {"PMX "};
-    return BaseImporter::SearchFileHeaderForToken(pIOHandler, pFile, pTokens,
-                                                  1);
+    return BaseImporter::SearchFileHeaderForToken(pIOHandler, pFile, pTokens, 2);
   }
 }
 
@@ -108,27 +111,33 @@ const aiImporterDesc *MMDImporter::GetInfo() const { return &desc; }
 //  MMD import implementation
 void MMDImporter::InternReadFile(const std::string &file, aiScene *pScene,
                                  IOSystem *pIOHandler) {
-  // Read file by istream
-  std::filebuf fb;
-  if (!fb.open(file, std::ios::in | std::ios::binary)) {
-    throw DeadlyImportError("Failed to open file " + file + ".");
+  // There is a bug when calling
+  // BaseImporter::SearchFileHeaderForToken(pIOHandler, pFile, pTokens, 1);
+  // and BaseImporter::SearchFileHeaderForToken(pIOHandler, pFile, &pTokens[1], 1);
+  // I've no idea to solve.
+  if(SimpleExtensionCheck(file, "pmx"))
+  {
+    // Read file by istream
+    std::filebuf fb;
+    if (!fb.open(file, std::ios::in | std::ios::binary)) {
+      throw DeadlyImportError("Failed to open file " + file + ".");
+    }
+
+    std::istream stream(&fb);
+    pmx::PmxModel model;
+    model.Read(&stream);
+
+    CreateDataFromImport(&model, pScene);
   }
-
-  std::istream fileStream(&fb);
-
-  // Get the file-size and validate it, throwing an exception when fails
-  fileStream.seekg(0, fileStream.end);
-  size_t fileSize = fileStream.tellg();
-  fileStream.seekg(0, fileStream.beg);
-
-  if (fileSize < sizeof(pmx::PmxModel)) {
-    throw DeadlyImportError(file + " is too small.");
+  else if(SimpleExtensionCheck(file, "vmd"))
+  {
+    std::ifstream fileStream(file.c_str(), std::ios::in | std::ios::binary);
+    vmd::VmdMotion motion;
+    motion.LoadFromStream(&fileStream);
+    CreateDataFromImport(&motion, pScene);
   }
-
-  pmx::PmxModel model;
-  model.Read(&fileStream);
-
-  CreateDataFromImport(&model, pScene);
+  else
+    throw DeadlyImportError("Strange file: " + file + ".");
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -361,6 +370,85 @@ aiMaterial *MMDImporter::CreateMaterial(const pmx::PmxMaterial *pMat,
                    AI_MATKEY_UVWSRC(aiTextureType_DIFFUSE, 0));
 
   return mat;
+}
+
+// ------------------------------------------------------------------------------------------------
+void MMDImporter::CreateDataFromImport(const vmd::VmdMotion* pMotion, aiScene* pScene)
+{
+  if (pMotion == NULL) {
+    return;
+  }
+
+  aiAnimation **ppAnim = new aiAnimation*;
+  aiAnimation *pAnim = new aiAnimation;
+  if (!pMotion->model_name.empty()) {
+    pAnim->mName.Set(pMotion->model_name);
+  } else {
+    ai_assert(false);
+  }
+
+  pAnim->mTicksPerSecond = mTickPerSecond;
+
+  *ppAnim = pAnim;
+  pScene->mAnimations = ppAnim;
+  pScene->mNumAnimations = 1;
+
+  if(pMotion->bone_frames.size() != 0)
+  {
+    std::tie(pAnim->mChannels, pAnim->mNumChannels) = CreateBoneChannels(pMotion->bone_frames);
+  }
+
+  pAnim->mDuration = mMaxFrame;
+}
+
+// ------------------------------------------------------------------------------------------------
+std::pair<aiNodeAnim**, ai_uint> MMDImporter::CreateBoneChannels(const std::vector<vmd::VmdBoneFrame> &boneFrames)
+{
+  std::map<std::string, std::vector<unsigned int> > bone_indices_map;
+  for(unsigned int i = 0; i < boneFrames.size(); ++i)
+  {
+    mMaxFrame = std::max(mMaxFrame, boneFrames[i].frame);
+
+    auto it = bone_indices_map.find(boneFrames[i].name);
+    if(it == bone_indices_map.end())
+      bone_indices_map[boneFrames[i].name] = std::vector<unsigned int>(i);
+    else
+      bone_indices_map[boneFrames[i].name].push_back(i);
+  }
+
+  aiNodeAnim** ppNodeAnim = new aiNodeAnim*[bone_indices_map.size()];
+
+  aiNodeAnim** curr_ppNodeAnim = ppNodeAnim;
+  for(auto it = bone_indices_map.begin(); it != bone_indices_map.end(); ++it)
+  {
+    *curr_ppNodeAnim = new aiNodeAnim;
+
+    (*curr_ppNodeAnim)->mNodeName = it->first;
+    (*curr_ppNodeAnim)->mNumPositionKeys = it->second.size();
+    (*curr_ppNodeAnim)->mNumRotationKeys = it->second.size();
+    (*curr_ppNodeAnim)->mPositionKeys = new aiVectorKey[it->second.size()];
+    (*curr_ppNodeAnim)->mRotationKeys = new aiQuatKey[it->second.size()];
+
+    aiVectorKey* pVectorKey = (*curr_ppNodeAnim)->mPositionKeys;
+    aiQuatKey* pQuatKey = (*curr_ppNodeAnim)->mRotationKeys;
+
+    for(auto index_it = it->second.begin(); index_it != it->second.end(); ++index_it)
+    {
+      pVectorKey->mTime = (double)boneFrames[*index_it].frame / mTickPerSecond;
+      const auto pos = boneFrames[*index_it].position;
+      pVectorKey->mValue = aiVector3D(pos[0], pos[1], pos[2]);
+
+      pQuatKey->mTime = (double)boneFrames[*index_it].frame / mTickPerSecond;
+      const auto rot = boneFrames[*index_it].orientation;
+      pQuatKey->mValue = aiQuaternion(rot[0], rot[1], rot[2], rot[3]);
+      ++pVectorKey;
+      ++pQuatKey;
+    }
+
+    ++curr_ppNodeAnim;
+  }
+
+  return std::make_pair(ppNodeAnim, bone_indices_map.size());
 }
 
 // ------------------------------------------------------------------------------------------------

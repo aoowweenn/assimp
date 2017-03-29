@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <ostream>
+#include <cstring>
 #include "MMDCpp14.h"
 
 namespace vmd
@@ -224,7 +225,7 @@ namespace vmd
 
 			// magic and version
 			stream->read((char*) buffer, 30);
-			if (strncmp(buffer, "Vocaloid Motion Data", 20))
+			if (std::strncmp(buffer, "Vocaloid Motion Data", 20))
 			{
 				std::cerr << "invalid vmd file." << std::endl;
 				return nullptr;
@@ -263,12 +264,15 @@ namespace vmd
 			}
 
 			// light frames
-			int light_frame_num;
-			stream->read((char*) &light_frame_num, sizeof(int));
-			result->light_frames.resize(light_frame_num);
-			for (int i = 0; i < light_frame_num; i++)
+			if (!stream->eof())
 			{
-				result->light_frames[i].Read(stream);
+				int light_frame_num;
+				stream->read((char*) &light_frame_num, sizeof(int));
+				result->light_frames.resize(light_frame_num);
+				for (int i = 0; i < light_frame_num; i++)
+				{
+					result->light_frames[i].Read(stream);
+				}
 			}
 
 			// unknown2

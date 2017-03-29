@@ -42,10 +42,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "BaseImporter.h"
 #include "MMDPmxParser.h"
+#include "MMDVmdParser.h"
 #include <assimp/material.h>
 #include <vector>
 
 struct aiMesh;
+struct aiNodeAnim;
+struct aiAnimation;
 
 namespace Assimp {
 
@@ -75,6 +78,7 @@ private:
 
     //! \brief  Create the data from imported content.
     void CreateDataFromImport(const pmx::PmxModel* pModel, aiScene* pScene);
+    void CreateDataFromImport(const vmd::VmdMotion* pMotion, aiScene* pScene);
 
     //! \brief Create the mesh
     aiMesh* CreateMesh(const pmx::PmxModel* pModel, const int indexStart, const int indexCount);
@@ -82,11 +86,20 @@ private:
     //! \brief Create the material
     aiMaterial* CreateMaterial(const pmx::PmxMaterial* pMat, const pmx::PmxModel* pModel);
 
+    //! \brief Create bone animations
+    std::pair<aiNodeAnim**, ai_uint> CreateBoneChannels(const std::vector<vmd::VmdBoneFrame> &boneFrames);
+
 private:
     //! Data buffer
     std::vector<char> m_Buffer;
     //! Absolute pathname of model in file system
     std::string m_strAbsPath;
+    //! TickPerSecond
+    const double mTickPerSecond = 30.0;
+    //! Max frame / TickPerSecond = Duration
+    int mMaxFrame;
+    //! File type
+    static const char *pTokens[2];
 };
 
 // ------------------------------------------------------------------------------------------------
