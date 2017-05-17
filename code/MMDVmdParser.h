@@ -11,19 +11,13 @@
 
 namespace vmd
 {
-	/// ボーンフレーム
 	class VmdBoneFrame
 	{
 	public:
-		/// ボーン名
 		std::string name;
-		/// フレーム番号
 		int frame;
-		/// 位置
 		float position[3];
-		/// 回転
 		float orientation[4];
-		/// 補間曲線
 		char interpolation[4][4][4];
 
 		void Read(std::istream* stream)
@@ -47,15 +41,11 @@ namespace vmd
 		}
 	};
 
-	/// 表情フレーム
 	class VmdFaceFrame
 	{
 	public:
-		/// 表情名
 		std::string face_name;
-		/// 表情の重み
 		float weight;
-		/// フレーム番号
 		uint32_t frame;
 
 		void Read(std::istream* stream)
@@ -75,23 +65,15 @@ namespace vmd
 		}
 	};
 
-	/// カメラフレーム
 	class VmdCameraFrame
 	{
 	public:
-		/// フレーム番号
 		int frame;
-		/// 距離
 		float distance;
-		/// 位置
 		float position[3];
-		/// 回転
 		float orientation[3];
-		/// 補間曲線
 		char interpolation[6][4];
-		/// 視野角
 		float angle;
-		/// 不明データ
 		char unknown[3];
 
 		void Read(std::istream *stream)
@@ -117,15 +99,11 @@ namespace vmd
 		}
 	};
 
-	/// ライトフレーム
 	class VmdLightFrame
 	{
 	public:
-		/// フレーム番号
 		int frame;
-		/// 色
 		float color[3];
-		/// 位置
 		float position[3];
 
 		void Read(std::istream* stream)
@@ -143,7 +121,6 @@ namespace vmd
 		}
 	};
 
-	/// IKの有効無効
 	class VmdIkEnable
 	{
 	public:
@@ -151,7 +128,6 @@ namespace vmd
 		bool enable;
 	};
 
-	/// IKフレーム
 	class VmdIkFrame
 	{
 	public:
@@ -190,23 +166,15 @@ namespace vmd
 		}
 	};
 
-	/// VMDモーション
 	class VmdMotion
 	{
 	public:
-		/// モデル名
 		std::string model_name;
-		/// バージョン
 		int version;
-		/// ボーンフレーム
 		std::vector<VmdBoneFrame> bone_frames;
-		/// 表情フレーム
 		std::vector<VmdFaceFrame> face_frames;
-		/// カメラフレーム
 		std::vector<VmdCameraFrame> camera_frames;
-		/// ライトフレーム
 		std::vector<VmdLightFrame> light_frames;
-		/// IKフレーム
 		std::vector<VmdIkFrame> ik_frames;
 
 		static std::unique_ptr<VmdMotion> LoadFromFile(char const *filename)
